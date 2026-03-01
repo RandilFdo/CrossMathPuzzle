@@ -19,6 +19,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import kotlinx.coroutines.delay
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -43,59 +44,121 @@ fun CrossMathApp() {
             onAdvancedClick = { currentScreen = "advanced" }
         )
         "game" -> GameScreen(onBack = { currentScreen = "menu" })
-        "advanced" -> Text("Coming soon...")
+        "advanced" -> Text("Advanced mode logic goes here...")
     }
 }
 
 @Composable
 fun GameScreen(onBack: () -> Unit, vm: GameViewModel = viewModel()) {
-    Column(modifier = Modifier.fillMaxSize().padding(8.dp)) {
+    // State for the number input popup (Task 6)
+    var showInputPopup by remember { mutableStateOf(false) }
+    var activeCell by remember { mutableStateOf<Pair<Int, Int>?>(null) }
+    var tempInput by remember { mutableStateOf("") }
+
+    // Timer Logic (Task 9)
+    var isTimerEnabled by rememberSaveable { mutableStateOf(false) }
+    var timeLeft by rememberSaveable { mutableStateOf(60) }
+    var isGameOver by rememberSaveable { mutableStateOf(false) }
+
+    // This effect runs the countdown when the switch is ON
+    LaunchedEffect(key1 = isTimerEnabled, key2 = timeLeft) {
+        if (isTimerEnabled && timeLeft > 0 && !isGameOver) {
+            delay(1000L)
+            timeLeft--
+            if (timeLeft == 0) isGameOver = true
+        }
+    }
+
+    Column(modifier = Modifier.fillMaxSize().padding(12.dp)) {
+        // Top Bar: Back Button, Timer Switch, and Score
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
         ) {
             Button(onClick = onBack) { Text("Back") }
-            Text("Score: 0", style = MaterialTheme.typography.headlineSmall)
+
+            // Task 9: Timer Switch
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("Timer: ")
+                Switch(checked = isTimerEnabled, onCheckedChange = { isTimerEnabled = it })
+                if (isTimerEnabled) {
+                    Text("  ${timeLeft}s", color = if (timeLeft < 10) Color.Red else Color.Black)
+                }
+            }
+
+            Text("Score: ${vm.score.value}", style = MaterialTheme.typography.titleMedium)
         }
 
         Spacer(modifier = Modifier.height(10.dp))
 
-        // Task 5: Use a grid to display the puzzle
-        LazyVerticalGrid(
-            columns = GridCells.Fixed(vm.gridSize),
-            modifier = Modifier.weight(1).border(1.dp, Color.Gray)
-        ) {
-            items(vm.gridSize * vm.gridSize) { index ->
-                val row = index / vm.gridSize
-                val col = index % vm.gridSize
-                val cellText = vm.gridData["$row,$col"] ?: ""
-                val isEditable = vm.editableCells.contains("$row,$col")
+        if (isGameOver) {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Text("GAME OVER!", style = MaterialTheme.typography.displayMedium, color = Color.Red)
+            }
+        } else {
+            // Task 5: The Puzzle Grid
+            LazyVerticalGrid(
+                columns = GridCells.Fixed(vm.gridSize),
+                modifier = Modifier.weight(1f).border(1.dp, Color.Black)
+            ) {
+                items(vm.gridSize * vm.gridSize) { index ->
+                    val row = index / vm.gridSize
+                    val col = index % vm.gridSize
+                    val cellValue = vm.gridData["$row,$col"] ?: ""
+                    val isEditable = vm.editableCells.contains("$row,$col")
 
-                // Task 4: Determine color feedback (Red if wrong, Green if right, White if empty)
-                val backgroundColor = when {
-                    !isEditable -> Color.Transparent
-                    cellText.isEmpty() -> Color.LightGray
-                    vm.isCorrect(row, col) -> Color.Green
-                    else -> Color.Red
-                }
+                    // Task 4: Color feedback (Green if correct, Red if wrong)
+                    val bgColor = when {
+                        !isEditable -> Color.White
+                        cellValue.isEmpty() -> Color(0xFFE0E0E0) // Light Gray for empty
+                        vm.isCellCorrect(row, col) -> Color.Green
+                        else -> Color.Red
+                    }
 
-                Box(
-                    modifier = Modifier
-                        .aspectRatio(1f)
-                        .border(0.5.dp, Color.LightGray)
-                        .background(backgroundColor)
-                        .clickable(enabled = isEditable) {
-                            // We will add the number input popup here in the next step
-                        },
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(text = cellText, style = MaterialTheme.typography.bodySmall)
+                    Box(
+                        modifier = Modifier
+                            .aspectRatio(1f)
+                            .border(0.5.dp, Color.Gray)
+                            .background(bgColor)
+                            .clickable(enabled = isEditable) {
+                                activeCell = Pair(row, col)
+                                tempInput = cellValue
+                                showInputPopup = true
+                            },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(text = cellValue, style = MaterialTheme.typography.bodySmall)
+                    }
                 }
             }
         }
     }
+
+    // Task 6: Input Dialog for entering numbers
+    if (showInputPopup && activeCell != null) {
+        AlertDialog(
+            onDismissRequest = { showInputPopup = false },
+            title = { Text("Enter Number") },
+            text = {
+                TextField(
+                    value = tempInput,
+                    onValueChange = { if (it.all { char -> char.isDigit() }) tempInput = it },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    singleLine = true
+                )
+            },
+            confirmButton = {
+                Button(onClick = {
+                    vm.updateCell(activeCell!!.first, activeCell!!.second, tempInput)
+                    showInputPopup = false
+                }) { Text("Confirm") }
+            }
+        )
+    }
 }
 
+// Keep your MainMenuScreen code here...
 @Composable
 fun MainMenuScreen(onNewGameClick: () -> Unit, onAdvancedClick: () -> Unit) {
     var showPopup by remember { mutableStateOf(false) }
